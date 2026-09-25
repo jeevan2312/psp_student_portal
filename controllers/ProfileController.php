@@ -45,37 +45,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['profile_picture'])) 
     }
 
     // Get file extension
-    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $extension = strtolower(
+        pathinfo($file['name'], PATHINFO_EXTENSION)
+    );
 
-    // Allowed file extensions
+    // Allowed extensions
     $allowedExtensions = ['jpg', 'jpeg', 'png'];
 
-    if (!in_array($extension, $allowedExtensions)) {
-        $_SESSION['upload_error'] = "Only JPG, JPEG and PNG files are allowed.";
+    if (!in_array($extension, $allowedExtensions, true)) {
+        $_SESSION['upload_error'] =
+            "Only JPG, JPEG and PNG files are allowed.";
+
+        header("Location: ../views/profile.php");
+        exit();
+    }
+
+    // Verify that the uploaded file is actually an image
+    $imageInfo = getimagesize($file['tmp_name']);
+
+    if ($imageInfo === false) {
+        $_SESSION['upload_error'] =
+            "The uploaded file is not a valid image.";
+
+        header("Location: ../views/profile.php");
+        exit();
+    }
+
+    // Verify MIME type
+    $allowedMimeTypes = [
+        'image/jpeg',
+        'image/png'
+    ];
+
+    if (!in_array($imageInfo['mime'], $allowedMimeTypes, true)) {
+        $_SESSION['upload_error'] =
+            "Invalid image type.";
+
         header("Location: ../views/profile.php");
         exit();
     }
 
     // Create a unique filename
-    $newFileName = uniqid() . '.' . $extension;
+    $newFileName = uniqid('', true) . '.' . $extension;
 
     // Upload directory
     $uploadDirectory = "../uploads/profile/";
 
-    // Full file path
+    // Full upload path
     $uploadPath = $uploadDirectory . $newFileName;
 
     // Move uploaded file
     if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
 
         // Save filename into database
-        $userModel->updateProfilePicture($user_id, $newFileName);
+        if ($userModel->updateProfilePicture($user_id, $newFileName)) {
 
-        $_SESSION['upload_success'] = "Profile picture uploaded successfully.";
+            $_SESSION['upload_success'] =
+                "Profile picture uploaded successfully.";
+
+        } else {
+
+            // Remove uploaded file if database update fails
+            if (file_exists($uploadPath)) {
+                unlink($uploadPath);
+            }
+
+            $_SESSION['upload_error'] =
+                "Profile picture uploaded, but database update failed.";
+        }
 
     } else {
 
-        $_SESSION['upload_error'] = "Failed to upload profile picture.";
+        $_SESSION['upload_error'] =
+            "Failed to upload profile picture.";
     }
 
     header("Location: ../views/profile.php");
@@ -86,7 +128,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['profile_picture'])) 
 $user = $userModel->findById($user_id);
 
 if (!$user) {
+
     session_destroy();
+
     header("Location: ../views/login.php");
     exit();
 }
